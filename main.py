@@ -9,8 +9,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from utils.inference import get_model
-from utils.rag import rag_index
 from utils.search import web_search_serper
+
+# Try to import RAG (optional - requires sentence-transformers)
+try:
+    from utils.rag import rag_index
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    rag_index = None
+    print("⚠️ RAG not available (sentence-transformers not installed)")
 
 app = FastAPI(title="edubot")
 
@@ -40,10 +48,11 @@ def startup_event():
     print("Starting up server...")
     get_model()  # load model
 
-    try:
-        rag_index.index_all_files()
-    except Exception as e:
-        print("⚠️ RAG index skipped:", e)
+    if RAG_AVAILABLE:
+        try:
+            rag_index.index_all_files()
+        except Exception as e:
+            print("⚠️ RAG index skipped:", e)
 
 
 # =====================
@@ -61,6 +70,8 @@ def health():
 
 @app.post("/index")
 def reindex():
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=501, detail="RAG not available - sentence-transformers not installed")
     try:
         rag_index.index_all_files()
         return {
@@ -84,7 +95,7 @@ def ask(req: AskRequest):
 
     # ---------- RAG ----------
     rag_sources = []
-    if req.use_rag:
+    if req.use_rag and RAG_AVAILABLE:
         try:
             retrieved = rag_index.retrieve(question, top_k=4)
             rag_sources = list(dict.fromkeys([r["meta"]["source"] for r in retrieved]))  # unique filenames
